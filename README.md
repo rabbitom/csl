@@ -6,13 +6,13 @@
 1. 写JSON文档定义数组的结构；
 1. 设计与JSON文档相对应的数据类；
 1. 加载JSON文档并实例化解析器；
-1. 调用解析器的序列化方法，将对象转换成字节数组；或调用反序列化方法，将字节数组转换成对象。
+1. 调用解析器的编码方法，将对象转换成字节数组；或调用解码方法，将字节数组转换成对象。
 
 ## 支持的编程语言
 * C#
-* Java
+* [Java](https://github.com/rabbitom/csl-java)
 * Objective-C
-* JavaScript
+* [JavaScript](https://github.com/rabbitom/csl-js)
 * Python
 
 ## 接口规格：
@@ -23,5 +23,5 @@ net.erabbit.csl
 ### 类
 * [CSLUtility](utility.md)：公共的工具类
 * [CSLMessage](message.md)：消息处理，实现JSON文档与字节数组的转换
-* CSLBitMap：位映射，将需要按位处理的内容映射成字节数组
-* CSLFrame：定义帧格式，用于在流式信道中定帧
+* CSLBitMap：位映射，将需要按位（bit）处理的内容映射成字节（byte）数组
+* CSLFrame：定义帧格式，用于在流式信道（如串口或TCP连接）中定帧

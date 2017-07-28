@@ -1,3 +1,6 @@
 [submodule "csl-js"]
 	path = csl-js
 	url = git@github.com:rabbitom/csl-js.git
+[submodule "csl-java"]
+	path = csl-java
+	url = git@github.com:rabbitom/csl-java.git

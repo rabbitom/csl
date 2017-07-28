@@ -14,8 +14,15 @@ CSLUtility
 ## 测试用例
 ```
 toIntLE([1,2,3], 0, 3) = 0x030201
+toIntLE([1,2,3], 0, 2) = 0x0201
+toIntLE([1,2,3], 1, 2) = 0x0302
 toIntBE([1,2,3], 0, 3) = 0x010203
+toIntBE([1,2,3], 0, 2) = 0x0102
+toIntBE([1,2,3], 1, 2) = 0x0203
+toHexString([1,10,255], 0, 3, "") = "010AFF"
 toHexString([1,10,255], 0, 3, "-") = "01-0A-FF"
+toHexString([1,10,255], 0, 2, "-") = "01-0A"
+toHexString([1,10,255], 1, 2, "-") = "0A-FF"
 fromHexString("120AFF") = [0x12, 0x0A, 0xFF]
 fromHexString("120AF") = [0x12, 0x0A, 0x0F]
 fromHexString("12-0-AF") = [0x12, 0x00, 0xAF]

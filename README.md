@@ -12,7 +12,8 @@
 * C#
 * [Java](https://github.com/rabbitom/csl-java)
 * Objective-C
-* [JavaScript](https://github.com/rabbitom/csl-js), [JavaScript for Android with AndroidJSCore](https://github.com/rabbitom/csl-js-android)
+* [JavaScript](https://github.com/rabbitom/csl-js)
+  * [JavaScript for Android](https://github.com/rabbitom/csl-js-android) with [AndroidJSCore](https://github.com/ericwlange/AndroidJSCore)
 * Python
 
 ## 接口规格：

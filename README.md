@@ -9,7 +9,7 @@
 1. 调用解析器的编码方法，将对象转换成字节数组；或调用解码方法，将字节数组转换成对象。
 
 ## 支持的编程语言
-* C#
+* [C#](https://github.com/rabbitom/csl-cs)
 * [Java](https://github.com/rabbitom/csl-java)
 * Objective-C
 * [JavaScript](https://github.com/rabbitom/csl-js)

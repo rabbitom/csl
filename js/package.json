@@ -1,0 +1,16 @@
+{
+  "name": "csl-js",
+  "version": "1.0.0",
+  "description": "",
+  "main": "csl.js",
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,4 +1,6 @@
 function checkLength(data, offset, byteLength, decodeResult) {
+    if(byteLength === undefined)
+        throw new Error('byteLength not set')
     if(offset + byteLength > data.length)
         throw new Error('Decoding failed: length too short', {
             cause: {
@@ -11,9 +13,51 @@ function checkLength(data, offset, byteLength, decodeResult) {
         decodeResult.length = byteLength
 }
 
+function csl_decode_bcd(data, offset, decodeResult) {
+    checkLength(data, offset, 1, decodeResult)
+    const x = data[offset]
+    const l = x % 0x10;
+    const h = (x - l) / 0x10;
+    if((h <= 9) && (l <= 9))
+        return h * 10 + l;
+    else
+        throw new Error(`Decoding failed: invalid bcd value ${x}`)
+}
+
+function csl_encode_bcd(x)
+{
+    if((x >= 0) && (x < 100)) {
+        const l = x % 10;
+        const h = (x - l) / 10;
+        return h * 0x10 + l;
+    }
+    else
+        throw new Error(`Encoding failed: invalid bcd value ${x}`)
+}
+
 function csl_decode_uint8(data, offset, decodeResult) {
     checkLength(data, offset, 1, decodeResult)
     return data[offset]
+}
+
+function csl_decode_int8(data, offset, decodeResult) {
+    checkLength(data, offset, 1, decodeResult)
+    const n = data[offset]
+    if(n >= 0 && n <= 127)
+        return n
+    else if(n >= 128 && n <= 255)
+        return n - 256
+    else
+        throw new Error(`Decoding failed: invalid int8 value ${n}`)
+}
+
+function csl_encode_int8(x) {
+    if((x >= 0) && (x <= 127))
+        return x
+    else if((x < 0 ) && (x >= -128))
+        return x + 256
+    else
+        throw new Error(`Encoding failed: invalid int8 value ${x}`)
 }
 
 function csl_decode_uint16(data, offset, littleEndian, decodeResult) {
@@ -49,8 +93,14 @@ function csl_decode_float32(data, offset, littleEndian, decodeResult) {
 function csl_decode_number(data, offset, config, decodeResult) {
     let n
     switch(config.numberType) {
+        case 'bcd':
+            n = csl_decode_bcd(data, offset, decodeResult)
+            break
         case 'uint8':
             n = csl_decode_uint8(data, offset, decodeResult)
+            break
+        case 'int8':
+            n = csl_decode_int8(data, offset, decodeResult)
             break
         case 'uint16be':
             n = csl_decode_uint16(data, offset, false, decodeResult)
@@ -76,6 +126,9 @@ function csl_decode_number(data, offset, config, decodeResult) {
         case 'int32le':
             n = csl_decode_int32(data, offset, true, decodeResult)
             break
+        case 'float32be':
+            n = csl_decode_float32(data, offset, false, decodeResult)
+            break
         case 'float32le':
             n = csl_decode_float32(data, offset, true, decodeResult)
             break
@@ -86,24 +139,18 @@ function csl_decode_number(data, offset, config, decodeResult) {
                 }
             })
     }
-    if(config.scale)
-        n *= config.scale
-    if(config.offset)
-        n += config.offset
-    if(config.decimals)
-        n = parseFloat(n.toFixed(config.decimals))
     return n
 }
 
 function csl_encode_number(value, config) {
-    if(config.offset)
-        value -= config.offset
-    if(config.scale)
-        value /= config.scale
     let typedArray
     switch(config.numberType) {
+        case 'bcd':
+            return new Uint8Array([csl_encode_bcd(value)])
         case 'uint8':
             return new Uint8Array([value])
+        case 'int8':
+            return new Uint8Array([csl_encode_int8(value)])
         case 'uint16be':
         case 'uint16le':
             typedArray = new Uint16Array([value])
@@ -120,11 +167,12 @@ function csl_encode_number(value, config) {
         case 'int32le':
             typedArray = new Int32Array([value])
             break
+        case 'float32be':
         case 'float32le':
             typedArray = new Float32Array([value])
             break
         default:
-            throw new Error('Encoding failed: number type not supported', {
+            throw new Error(`Encoding failed: numberType not supported ${config.numberType}`, {
                 cause: config
             })
     }
@@ -146,8 +194,8 @@ function csl_decode_string(data, offset, config, decodeResult) {
             cause: config
         })
     checkLength(data, offset, config.byteLength, decodeResult)
-    if(config.stringEncoding === 'hex')
-        return Array.from(data.slice(offset, offset + config.byteLength)).map(n => (n < 16 ? '0' : '') + n.toString(16).toUpperCase()).join(config.hexByteConnector || '')
+    if(config.encoding === 'hex')
+        return csl_util_build_hex_string(Array.from(data.slice(offset, offset + config.byteLength)), config.glue)
     else {
         let stringLength = config.byteLength
         while(stringLength > 0 && data[offset+stringLength-1] === 0)
@@ -157,8 +205,9 @@ function csl_decode_string(data, offset, config, decodeResult) {
     }
 }
 
-function csl_encode_string(str, length, encoding) {
-    if(typeof length !== 'number')
+function csl_encode_string(str, config) {
+    const { byteLength, encoding } = config;
+    if(typeof byteLength !== 'number')
         throw new Error('Encoding failed: byte length of string not set', {
             cause: {
                 str
@@ -167,8 +216,8 @@ function csl_encode_string(str, length, encoding) {
     const bytes = []
     let i=0
     if(encoding === 'hex') {
-        const hexBytes = csl_parse_hex_string(str)
-        const stringLength = Math.min(hexBytes.length, length)
+        const hexBytes = csl_util_parse_hex_string(str)
+        const stringLength = Math.min(hexBytes.length, byteLength)
         while(i < stringLength) {
             bytes[i] = hexBytes[i]
             i++
@@ -177,13 +226,13 @@ function csl_encode_string(str, length, encoding) {
     else {
         const textEncoder = new TextEncoder()
         const strBytes = textEncoder.encode(str)
-        const stringLength = Math.min(strBytes.length, length)
+        const stringLength = Math.min(strBytes.length, byteLength)
         while(i < stringLength) {
             bytes[i] = strBytes[i]
             i++
         }
     }
-    while(i < length)
+    while(i < byteLength)
         bytes[i++] = 0
     return bytes
 }
@@ -201,31 +250,70 @@ function csl_decode_bytes(data, offset, config, decodeResult) {
     return data.slice(offset, offset + byteLength)
 }
 
-function csl_decode_boolean(data, offset, decodeResult) {
-    checkLength(data, offset, 1, decodeResult)
-    return data[offset] !== 0
+function check_boolean_config(config) {
+    let { trueValue, falseValue, defaultValue } = config
+    if(trueValue === undefined && falseValue === undefined && defaultValue === undefined) {
+        trueValue = 1
+        falseValue = 0
+        defaultValue = true
+    }
+    else if(trueValue === undefined || falseValue === undefined || defaultValue === undefined)
+        throw new Error('Decoding failed: invalid config for boolean(trueValue, falseValue and defaultValue must be all set or not set)')
+    return {
+        trueValue,
+        falseValue,
+        defaultValue
+    }
 }
 
-function csl_encode_boolean(value) {
-    return new Uint8Array([value ? 1 : 0])
+function csl_decode_boolean(data, offset, config, decodeResult) {
+    checkLength(data, offset, 1, decodeResult)
+    const { trueValue, falseValue, defaultValue } = check_boolean_config(config)
+    if(data[offset] === trueValue)
+        return true
+    else if(data[offset] === falseValue)
+        return false
+    else
+        return defaultValue
 }
 
-function csl_decode_bitmask(data, offset, attributes, decodeResult) {
-    checkLength(data, offset, 1, decodeResult)
+function csl_encode_boolean(value, config) {
+    const { trueValue, falseValue } = check_boolean_config(config)
+    return new Uint8Array([value ? trueValue : falseValue])
+}
+
+function csl_decode_bitmask(data, offset, config, decodeResult) {
+    const { byteLength, endian, attributes } = config
+    checkLength(data, offset, byteLength, decodeResult)
+    let x = data[offset]
+    if(byteLength > 1) {
+        if(endian === 'little')
+            for(let i=1; i<byteLength; i++)
+                x = x | (data[offset + i] << (8 * i))
+        else if(endian === 'big')
+            for(let i=1; i<byteLength; i++)
+                x = (x  << (8 * i)) | data[offset + i]
+        else
+            throw new Error('Decoding failed: invalid boolean config - endian must be specified when byteLength > 1')
+    }
     const res = {}
     attributes.forEach(attribute => {
         const { mask, name } = attribute
-        let maskShift = 0;
-        while(((1 << maskShift) & mask) == 0)
-            maskShift++;
-        const attrByte = (data[offset] & mask) >> maskShift;
+        let { shift } = attribute
+        if(shift === undefined) {
+            shift = 0;
+            while(((1 << shift) & mask) == 0)
+                shift++;
+        }
+        const attrByte = (x & mask) >> shift;
         res[name] = csl_decode([attrByte], 0, attribute)
     })
     return res
 }
 
-function csl_encode_bitmask(value, attributes) {
+function csl_encode_bitmask(value, config) {
     let b = 0
+    const { attributes, byteLength, endian } = config
     attributes.forEach(attribute => {
         const { mask, name } = attribute
         const attrData = csl_encode(value[name], attribute)
@@ -235,12 +323,23 @@ function csl_encode_bitmask(value, attributes) {
             maskShift++;
         b |= attrValue << maskShift
     })
-    return new Uint8Array([b])
+    const res = new Uint8Array(byteLength)
+    if(endian === 'little')
+        for(let i=0; i<byteLength; i++)
+            res[i] = (b >> (8 * i)) & 0xFF
+    else if(endian === 'big')
+        for(let i=0; i<byteLength; i++)
+            res[i] = (b >> (8 * (byteLength - 1 - i))) & 0xFF
+    else if(endian === undefined && byteLength === 1)
+        res[0] = b
+    else
+        throw new Error('Encoding failed: invalid boolean config - endian must be specified when byteLength > 1')
+    return res
 }
 
 function csl_get_variable_type(value, config) {
     const typeIndex = value[config.typeIndex]
-    if(typeIndex) {
+    if(typeIndex !== undefined) {
         const { types } = config
         const type = types.find(t => t.index === typeIndex)
         if(type === undefined)
@@ -251,49 +350,14 @@ function csl_get_variable_type(value, config) {
         throw new Error("csl get variable type failed: type could not be determined")
 }
 
-function csl_remap_attributes(value, map) {
-    const res = {}
-    map.forEach(entry => {
-        if(typeof entry === 'object') {
-            const { key, attributes } = entry
-            const obj = {}
-            attributes.forEach(attribute => {
-                obj[attribute] = value[attribute]
-            })
-            res[key] = obj
-        }
-        else if(typeof entry === 'string')
-            res[entry] = value[entry]
-        else
-            throw new Error("decoding failed: map entry should be a string or dictionary", {
-                cause: {
-                    map
-                }
-            })
-    })
-    return res
+function csl_decode_variable(value, data, offset, config, decodeResult) { 
+    const type = csl_get_variable_type(value, config)
+    return csl_decode(data, offset, type, decodeResult)
 }
 
-function csl_unmap_attributes(value, map) {
-    const res = {}
-    map.forEach(entry => {
-        if(typeof entry === 'object') {
-            const { key, attributes } = entry
-            const obj = value[key]
-            attributes.forEach(attribute => {
-                res[attribute] = obj[attribute]
-            })
-        }
-        else if(typeof entry === 'string')
-            res[entry] = value[entry]
-        else
-            throw new Error("encoding failed: map entry should be a string or dictionary", {
-                cause: {
-                    map
-                }
-            })
-    })
-    return res
+function csl_encode_variable(value, config) {
+    const type = csl_get_variable_type(value, config)
+    return csl_encode(value, type)
 }
 
 function csl_decode_object(data, offset, config, decodeResult) {
@@ -304,10 +368,11 @@ function csl_decode_object(data, offset, config, decodeResult) {
     let totalLength = 0
     for(let attribute of attributes) {
         const { name, type } = attribute
-        if(type === "variable")
-            attribute = csl_get_variable_type(res, attribute)
         const attributeDecodeResult = {}
-        res[name] = csl_decode(data, offset + totalLength, attribute, attributeDecodeResult)
+        if(type === "variable")
+            res[name] = csl_decode_variable(res, data, offset + totalLength, attribute, attributeDecodeResult)
+        else
+            res[name] = csl_decode(data, offset + totalLength, attribute, attributeDecodeResult)
         totalLength += attributeDecodeResult.length
         if(offset + totalLength === data.length)
             break
@@ -316,7 +381,8 @@ function csl_decode_object(data, offset, config, decodeResult) {
     return res
 }
 
-function csl_encode_object(value, attributes) {
+function csl_encode_object(value, config) {
+    const { attributes } = config
     let data = []
     for(let attribute of attributes) {
         let attributeValue = attribute.value
@@ -341,7 +407,7 @@ function csl_encode_object(value, attributes) {
 }
 
 function csl_decode_array(data, offset, config, decodeResult) {
-    const { byteLength, arrayItem } = config
+    const { byteLength, item } = config
     if(typeof byteLength !== 'number')
         throw new Error("Decoding failed: byteLength of array not set", {
             cause: config
@@ -351,7 +417,7 @@ function csl_decode_array(data, offset, config, decodeResult) {
     const res = []
     while(totalLength < byteLength) {
         const itemDecodeResult = {}
-        const itemValue = csl_decode(data, offset + totalLength, arrayItem, itemDecodeResult)
+        const itemValue = csl_decode(data, offset + totalLength, item, itemDecodeResult)
         res.push(itemValue)
         totalLength += itemDecodeResult.length
     }
@@ -359,10 +425,11 @@ function csl_decode_array(data, offset, config, decodeResult) {
     return res
 }
 
-function csl_encode_array(value, itemConfig) {
+function csl_encode_array(value, config) {
+    const { item } = config
     let data = []
     for(const itemValue of value) {
-        const itemData = csl_encode(itemValue, itemConfig)
+        const itemData = csl_encode(itemValue, item)
         data = data.concat(Array.from(itemData))
     }
     return new Uint8Array(data)
@@ -387,18 +454,11 @@ export function csl_decode(data, offset, config, decodeResult) {
         case 'bytes':
             return csl_decode_bytes(data, offset, config, decodeResult)
         case 'boolean':
-            return csl_decode_boolean(data, offset, decodeResult)
-        case 'object': {
-                let obj
-                if(config.objectType === 'bitmask')
-                    obj = csl_decode_bitmask(data, offset, config.attributes, decodeResult)
-                else
-                    obj = csl_decode_object(data, offset, config, decodeResult)
-                if(config.remap)
-                    return csl_remap_attributes(obj, config.remap)
-                else
-                    return obj
-            }
+            return csl_decode_boolean(data, offset, config, decodeResult)
+        case 'bitmask':
+            return csl_decode_bitmask(data, offset, config, decodeResult)
+        case 'object': 
+            return csl_decode_object(data, offset, config, decodeResult)
         case 'array':
             return csl_decode_array(data, offset, config, decodeResult)
         default:
@@ -415,7 +475,7 @@ export function csl_encode(value, config) {
         case 'number':
             return csl_encode_number(value, config)
         case 'string':
-            return csl_encode_string(value, config.byteLength, config.stringEncoding)
+            return csl_encode_string(value, config)
         case 'bytes':
             if(value instanceof Uint8Array || value instanceof Array)
                 return new Uint8Array(value)
@@ -426,16 +486,15 @@ export function csl_encode(value, config) {
                     }
                 })
         case 'boolean':
-            return csl_encode_boolean(value)
+            return csl_encode_boolean(value, config)
+        case 'bitmask':
+            return csl_encode_bitmask(value, config)
         case 'object':
-            if(config.remap)
-                value = csl_unmap_attributes(value, config.remap)
-            if(config.objectType === 'bitmask')
-                return csl_encode_bitmask(value, config.attributes)
-            else
-                return csl_encode_object(value, config.attributes)
+            return csl_encode_object(value, config)
         case 'array':
-            return csl_encode_array(value, config.arrayItem)
+            return csl_encode_array(value, config)
+        case 'variable':
+            return csl_encode_variable(value, config)
         default:
             throw new Error('Encoding failed: type not supported', {
                 cause: {
@@ -445,7 +504,7 @@ export function csl_encode(value, config) {
     }
 }
 
-export function csl_parse_hex_string(str) {
+export function csl_util_parse_hex_string(str) {
     const res = [];
     let i = 0;
     if(str.substring(0,2) === "0x")
@@ -464,16 +523,11 @@ export function csl_parse_hex_string(str) {
     return res;
 }
 
-export function csl_format_hex_string(arr) {
-    return csl_decode(arr, 0, {
-        type: "string",
-        byteLength: arr.length || arr.byteLength,
-        stringEncoding: "hex",
-        hexByteConnector: "-"
-    })
+export function csl_util_build_hex_string(arr, glue) {
+    return arr.map(n => n.toString(16).padStart(2, '0').toUpperCase()).join(glue || '')
 }
 
-export function csl_find_subarr(arr, offset, subarr) {
+export function csl_util_find_subarr(arr, offset, subarr) {
     if(!(arr instanceof Uint8Array))
         arr = new Uint8Array(arr)
     if(!(subarr instanceof Uint8Array))

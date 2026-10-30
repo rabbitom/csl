@@ -8,6 +8,7 @@ config规定了编码和解码的具体方法，可以是一个字段或一个�
 - byteLength: number - 字段的字节长度，如果值可以通过type推断的话可省略
 - values: { value: any, name: string }[] - 字段取值列表，值只能是其中一个，可实现为枚举
 - types: string[] | config[] - 字段类型列表
+- optional: 当前字段可忽略，否则编码时如果没有相应字段值会报错
 
 以下属性用于值固定的字段，编码时直接使用，解码时与提供的字节数组或数据值对比：
 - bytes: number[] - 字节数组，编码的结果

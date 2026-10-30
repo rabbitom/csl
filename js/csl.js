@@ -341,10 +341,7 @@ function csl_get_variable_type(value, config) {
     const typeIndex = value[config.typeIndex]
     if(typeIndex !== undefined) {
         const { types } = config
-        const type = types.find(t => t.index === typeIndex)
-        if(type === undefined)
-            throw new Error("csl get variable type failed: variable type not found")
-        return type
+        return types.find(t => t.index === typeIndex)
     }
     else
         throw new Error("csl get variable type failed: type could not be determined")
@@ -352,7 +349,11 @@ function csl_get_variable_type(value, config) {
 
 function csl_decode_variable(value, data, offset, config, decodeResult) { 
     const type = csl_get_variable_type(value, config)
-    return csl_decode(data, offset, type, decodeResult)
+    if(type !== undefined)
+        return csl_decode(data, offset, type, decodeResult)
+    if(!config.optional)
+        throw new Error("csl decode variable failed: variable type not found")
+    decodeResult.length = 0
 }
 
 function csl_encode_variable(value, config) {
@@ -369,8 +370,11 @@ function csl_decode_object(data, offset, config, decodeResult) {
     for(let attribute of attributes) {
         const { name, type } = attribute
         const attributeDecodeResult = {}
-        if(type === "variable")
-            res[name] = csl_decode_variable(res, data, offset + totalLength, attribute, attributeDecodeResult)
+        if(type === "variable") {
+            const attributeValue = csl_decode_variable(res, data, offset + totalLength, attribute, attributeDecodeResult)
+            if(attributeValue !== undefined)
+                res[name] = attributeValue
+        }
         else
             res[name] = csl_decode(data, offset + totalLength, attribute, attributeDecodeResult)
         totalLength += attributeDecodeResult.length
@@ -392,7 +396,7 @@ function csl_encode_object(value, config) {
                 if(attribute.optional)
                     continue
                 else
-                    throw new Error("Encoding failed: value not found", {
+                    throw new Error(`Encoding failed: value not found of ${attribute.name || 'anonymous attribute'}`, {
                         value,
                         attribute
                     })

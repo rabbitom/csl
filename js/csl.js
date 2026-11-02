@@ -410,7 +410,9 @@ function csl_encode_object(value, config, types) {
         if(attribute.type === 'index') {
             const attributeType = csl_get_index_type(value, attribute)
             if(attributeType === undefined)
-                throw new Error(`Encoding failed: index type not found for ${attribute.name}`)
+                throw new Error(`Encoding failed: index type not found for ${attribute.name}`, {
+                    cause: config
+                })
             attributeBytes[attribute.name] = csl_encode(attributeValue, attributeType, types)
         }
         else
@@ -568,10 +570,6 @@ export function csl_util_find_subarr(arr, offset, subarr) {
     return -1
 }
 
-export function keysSet(obj) {
-    return Object.keys(obj).filter(key => obj[key])
-}
-
 function csl_evaluate(obj, func) {
     // console.log("evaluate:", func)
     if(typeof func === 'number')
@@ -635,6 +633,70 @@ function csl_evaluate(obj, func) {
     throw new Error(`invalid operand: ${part}`)
 }
 
-export function csl_load_types(typesArray) {
+export function csl_util_keys_array(obj) {
+    return Object.keys(obj).filter(key => obj[key])
+}
+
+export function csl_util_types_object(typesArray) {
     return typesArray.reduce((acc, type) => ({ ...acc, [type.name]: type }), {})
+}
+
+export function csl_util_constants_object(config, constants) {
+    constants = constants || {}
+    if(config.name && config.values)
+        constants = {
+            ...constants,
+            [config.name]: config.values.reduce((acc, item) => ({...acc, [item.name]: item.value}), {})
+        }
+    if(config.attributes)
+        constants = config.attributes.reduce((acc,attr) => csl_util_constants_object(attr, acc), constants)
+    if(config.types)
+        constants = config.types.reduce((acc,attr) => csl_util_constants_object(attr, acc), constants)
+    if(config.item)
+        constants = csl_util_constants_object(config.item, constants)
+    return constants
+}
+
+export function csl_util_parse_hex_numbers(config) {
+    if(typeof config.value === 'string' && config.value.match(/^0x[0-9A-Fa-f]+$/))
+        config = {
+            ...config,
+            value: parseInt(config.value)
+        }
+    if(typeof config.indexValue === 'string' && config.indexValue.match(/^0x[0-9A-Fa-f]+$/))
+        config = {
+            ...config,
+            indexValue: parseInt(config.indexValue)
+        }
+    if(config.values)
+        config = {
+            ...config,
+            values: config.values.map(item => csl_util_parse_hex_numbers(item))
+        }
+    if(config.attributes)
+        config = {
+            ...config,
+            attributes: config.attributes.map(attr => csl_util_parse_hex_numbers(attr))
+        }
+    if(config.types)
+        config = {
+            ...config,
+            types: config.types.map(type => csl_util_parse_hex_numbers(type))
+        }
+    if(config.item)
+        config = {
+            ...config,
+            item: csl_util_parse_hex_numbers(config.item)
+        }
+    return config
+}
+
+export function csl_prepare_config(config, types) {
+    config = csl_util_parse_hex_numbers(config)
+    types = types.map(type => csl_util_parse_hex_numbers(type))
+    return {
+        config,
+        types: csl_util_types_object(types),
+        constants: types.reduce((acc,type) => csl_util_constants_object(type, acc), csl_util_constants_object(config, {}))
+    }
 }

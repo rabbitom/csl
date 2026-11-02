@@ -341,10 +341,10 @@ function csl_get_variable_type(value, config) {
     const typeIndex = value[config.typeIndex]
     if(typeIndex !== undefined) {
         const { types } = config
-        return types.find(t => t.index === typeIndex)
+        return types.find(t => parseInt(t.index) === typeIndex)
     }
     else
-        throw new Error("csl get variable type failed: type could not be determined")
+        throw new Error(`csl get variable type failed: index could not be determined for ${config.name}`)
 }
 
 function csl_decode_variable(value, data, offset, config, decodeResult) { 
@@ -354,11 +354,6 @@ function csl_decode_variable(value, data, offset, config, decodeResult) {
     if(!config.optional)
         throw new Error("csl decode variable failed: variable type not found")
     decodeResult.length = 0
-}
-
-function csl_encode_variable(value, config) {
-    const type = csl_get_variable_type(value, config)
-    return csl_encode(value, type)
 }
 
 function csl_decode_object(data, offset, config, decodeResult) {
@@ -387,13 +382,16 @@ function csl_decode_object(data, offset, config, decodeResult) {
 
 function csl_encode_object(value, config) {
     const { attributes } = config
-    let data = []
+    let attributeBytes = {}
+    const attributesToEvaluate = []
     for(let attribute of attributes) {
         let attributeValue = attribute.value
         if(attributeValue === undefined) {
             attributeValue = value[attribute.name]
             if(attributeValue === undefined) {
-                if(attribute.optional)
+                if(attribute.valueFunc)
+                    attributesToEvaluate.push(attribute)
+                else if(attribute.optional)
                     continue
                 else
                     throw new Error(`Encoding failed: value not found of ${attribute.name || 'anonymous attribute'}`, {
@@ -402,12 +400,21 @@ function csl_encode_object(value, config) {
                     })
             }
         }
-        if(attribute.type === 'variable')
-            attribute = csl_get_variable_type(value, attribute)
-        const attributeData = csl_encode(attributeValue, attribute)
-        data = data.concat(Array.from(attributeData))
+        if(attribute.type === 'variable') {
+            const attributeType = csl_get_variable_type(value, attribute)
+            if(attributeType === undefined)
+                throw new Error(`Encoding failed: variable type not found for ${attribute.name}`)
+            attributeBytes[attribute.name] = csl_encode(attributeValue, attributeType)
+        }
+        else
+            attributeBytes[attribute.name] = csl_encode(attributeValue, attribute)
     }
-    return new Uint8Array(data)
+    for(const attribute of attributesToEvaluate) {
+        const attributeValue = csl_encode_evaluate(attributeBytes, attribute.valueFunc)
+        attributeBytes[attribute.name] = csl_encode(attributeValue, attribute)
+    }
+    const bytes = attributes.reduce((acc, attribute) => acc.concat(Array.from(attributeBytes[attribute.name] || [])), [])
+    return new Uint8Array(bytes)
 }
 
 function csl_decode_array(data, offset, config, decodeResult) {
@@ -497,8 +504,6 @@ export function csl_encode(value, config) {
             return csl_encode_object(value, config)
         case 'array':
             return csl_encode_array(value, config)
-        case 'variable':
-            return csl_encode_variable(value, config)
         default:
             throw new Error('Encoding failed: type not supported', {
                 cause: {
@@ -552,4 +557,60 @@ export function csl_util_find_subarr(arr, offset, subarr) {
 
 export function keysSet(obj) {
     return Object.keys(obj).filter(key => obj[key])
+}
+
+function csl_encode_evaluate(obj, func) {
+    // console.log("calc:", func)
+    if(typeof func === 'number')
+        return func
+    let parts = func.match(/((len|sum)\([A-Za-z_,]+\))|(0x[0-9A-F]+)|(\d+)|([+-\\&])|(\(.+\))/g)
+    while(parts.length > 1) {
+        // console.log("parts:",parts)
+        const partsWithIndex = parts.map((part, index) => ({ part, index }))
+        const operators = partsWithIndex.filter(item => /^(\+|-|&)$/.test(item.part))
+        // console.log("operators:", operators)
+        if(operators.length === 0)
+            throw new Error("invalid expression: no operator")
+        const operatorPriorities = ["&", "+", "-"]
+        operators.sort((a, b) => operatorPriorities.indexOf(a.part) - operatorPriorities.indexOf(b.part))
+        const operator = operators[0]
+        if(operator.index === 0 && operator.part !== '-')
+            throw new Error(`invalid operator: ${operator.part} at beginning`)
+        else if(operator.index === parts.length - 1)
+            throw new Error(`invalid operator: ${operator.part} at end`)
+        let calculatedPart
+        switch(operator.part) {
+            case "&":
+                calculatedPart = csl_encode_evaluate(obj,parts[operator.index - 1]) & csl_encode_evaluate(obj,parts[operator.index + 1])
+                break
+            case "+":
+                calculatedPart = csl_encode_evaluate(obj,parts[operator.index - 1]) + csl_encode_evaluate(obj,parts[operator.index + 1])
+                break
+            case "-":
+                calculatedPart = (operator.index > 0 ? csl_encode_evaluate(obj,parts[operator.index - 1]) : 0) - csl_encode_evaluate(obj,parts[operator.index + 1])
+        }
+        parts = [...parts.slice(0,operator.index-1), calculatedPart, ...parts.slice(operator.index+2)]
+    }
+    const part = parts[0]
+    if(typeof part === 'number')
+        return part
+    function arr(obj, keys) {
+        return keys.split(',').reduce((acc, key) => [...acc, ...(obj[key] || [])], [])
+    }
+    const lenMatch = part.match(/^len\(([A-Za-z_,]+)\)$/)
+    if(lenMatch)
+        return arr(obj, lenMatch[1]).length || 0
+    const sumMatch = part.match(/^sum\(([A-Za-z_,]+)\)$/)
+    if(sumMatch)
+        return arr(obj, sumMatch[1]).reduce((acc, val) => acc + val, 0) || 0
+    const hexMatch = part.match(/^0x([0-9A-Fa-f]+)$/)
+    if(hexMatch)
+        return parseInt(hexMatch[0], 16)
+    const decMatch = part.match(/(\d+)/)
+    if(decMatch)
+        return parseInt(decMatch[0], 10)
+    const bracketMatch = part.match(/^\((.+)\)$/)
+    if(bracketMatch)
+        return csl_encode_evaluate(obj, bracketMatch[1])
+    throw new Error(`invalid operand: ${part}`)
 }

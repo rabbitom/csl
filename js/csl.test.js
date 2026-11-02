@@ -19,10 +19,8 @@ test('decode/encode number', () => {
     ]
     // decode
     cases.forEach(([numberType, arr, n]) => {
-        const decodeResult = {}
-        const res = csl_decode(arr,0,{type:'number', numberType},decodeResult)
-        expect(res).toBe(n)
-        expect(decodeResult.length).toBe(arr.length)
+        const res = csl_decode(arr, 0, {type:'number', numberType})
+        expect(res).toStrictEqual({ value: n, byteLength: arr.length })
     })
     // encode
     cases.forEach(([numberType, arr, n]) => {
@@ -38,9 +36,9 @@ test('encode/decode ascii string', () => {
         type: 'string',
         byteLength: 4
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toEqual(str)
-    expect(decodeResult.length).toBe(config.byteLength)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toEqual(str)
+    expect(res.byteLength).toBe(config.byteLength)
     expect(csl_encode(str, config)).toStrictEqual(arr)
 })
 
@@ -63,9 +61,9 @@ test('encode/decode hex string', () => {
         glue: ':',
         byteLength: 2
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toEqual(str)
-    expect(decodeResult.length).toBe(config.byteLength)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toEqual(str)
+    expect(res.byteLength).toBe(config.byteLength)
     expect(csl_encode(str, config)).toStrictEqual(arr)
 })
 
@@ -76,9 +74,9 @@ test('encode/decode UTF-8 string', () => {
         type: 'string',
         byteLength: 12
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toEqual(str)
-    expect(decodeResult.length).toBe(config.byteLength)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toEqual(str)
+    expect(res.byteLength).toBe(config.byteLength)
     expect(csl_encode(str, config)).toStrictEqual(arr)
 })
 
@@ -88,9 +86,9 @@ test('encode/decode bytes', () => {
         type: 'bytes',
         byteLength: 3
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toStrictEqual(new Uint8Array(arr))
-    expect(decodeResult.length).toBe(config.byteLength)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toStrictEqual(new Uint8Array(arr))
+    expect(res.byteLength).toBe(config.byteLength)
     expect(csl_encode(arr, config)).toStrictEqual(new Uint8Array(arr))
 })
 
@@ -98,13 +96,9 @@ test('encode/decode boolean with default config', () => {
     const config = {
         type: 'boolean'
     }
-    const decodeResult = {}
-    expect(csl_decode([1], 0, config, decodeResult)).toBe(true)
-    expect(decodeResult.length).toBe(1)
-    expect(csl_decode([2], 0, config, decodeResult)).toBe(true)
-    expect(decodeResult.length).toBe(1)
-    expect(csl_decode([0], 0, config, decodeResult)).toBe(false)
-    expect(decodeResult.length).toBe(1)
+    expect(csl_decode([1], 0, config)).toStrictEqual({ value: true, byteLength: 1 })
+    expect(csl_decode([2], 0, config)).toStrictEqual({ value: true, byteLength: 1 })
+    expect(csl_decode([0], 0, config)).toStrictEqual({ value: false, byteLength: 1 })
     expect(csl_encode(true, config)).toStrictEqual(new Uint8Array([1]))
     expect(csl_encode(false, config)).toStrictEqual(new Uint8Array([0]))
 })
@@ -116,13 +110,9 @@ test('encode/decode boolean with custom config', () => {
         falseValue: 1,
         defaultValue: false
     }
-    const decodeResult = {}
-    expect(csl_decode([1], 0, config, decodeResult)).toBe(false)
-    expect(decodeResult.length).toBe(1)
-    expect(csl_decode([2], 0, config, decodeResult)).toBe(false)
-    expect(decodeResult.length).toBe(1)
-    expect(csl_decode([0], 0, config, decodeResult)).toBe(true)
-    expect(decodeResult.length).toBe(1)
+    expect(csl_decode([1], 0, config)).toStrictEqual({ value: false, byteLength: 1 })
+    expect(csl_decode([2], 0, config)).toStrictEqual({ value: false, byteLength: 1 })
+    expect(csl_decode([0], 0, config)).toStrictEqual({ value: true, byteLength: 1 })
     expect(csl_encode(true, config)).toStrictEqual(new Uint8Array([0]))
     expect(csl_encode(false, config)).toStrictEqual(new Uint8Array([1]))
 })
@@ -156,9 +146,9 @@ test('encode/decode bitmask with 1 byte', () => {
             }
         ]
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toStrictEqual(obj)
-    expect(decodeResult.length).toBe(1)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toStrictEqual(obj)
+    expect(res.byteLength).toBe(1)
     expect(csl_encode(obj, config)).toStrictEqual(new Uint8Array(arr))
 })
 
@@ -203,9 +193,9 @@ test('encode/decode bitmask with 2 bytes', () => {
             }
         ]
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toStrictEqual(obj)
-    expect(decodeResult.length).toBe(2)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toStrictEqual(obj)
+    expect(res.byteLength).toBe(2)
     expect(csl_encode(obj, config)).toStrictEqual(new Uint8Array(arr))
 })
 
@@ -222,9 +212,9 @@ test('encode/decode object', () => {
             {"name":"s","type":"string","byteLength":3}
         ]
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toStrictEqual(obj)
-    expect(decodeResult.length).eql(arr.length)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toStrictEqual(obj)
+    expect(res.byteLength).eql(arr.length)
     expect(csl_encode(obj, config)).toStrictEqual(new Uint8Array(arr))
 })
 
@@ -285,9 +275,9 @@ test('encode/decode variable type in object', () => {
             pages: 180
         }
     }
-    const decodeResult = {}
-    expect(csl_decode(arr, 0, config, decodeResult)).toStrictEqual(obj)
-    expect(decodeResult.length).toBe(arr.length)
+    const res = csl_decode(arr, 0, config)
+    expect(res.value).toStrictEqual(obj)
+    expect(res.byteLength).toBe(arr.length)
     expect(csl_encode(obj, config)).toStrictEqual(new Uint8Array(arr))
 })
 
@@ -302,9 +292,9 @@ test('encode/decode array', () => {
             "numberType":"uint8"
         }
     }
-    const decodeResult = {}
-    expect(csl_decode(data, 0, config, decodeResult)).toStrictEqual(arr)
-    expect(decodeResult.length).eql(data.length)
+    const res = csl_decode(data, 0, config)
+    expect(res.value).toStrictEqual(arr)
+    expect(res.byteLength).eql(data.length)
     expect(csl_encode(arr, config)).toStrictEqual(data)
 })
 

@@ -363,7 +363,13 @@ function csl_decode_object(data, offset, config, types) {
     const res = {}
     let totalLength = 0
     for(let attribute of attributes) {
-        const { name, type } = attribute
+        const { name, byteLength, lengthFunc, type } = attribute
+        if(byteLength === undefined && lengthFunc) {
+            attribute = {
+                ...attribute,
+                byteLength: csl_evaluate(res, lengthFunc)
+            }
+        }
         if(type === "index") {
             const attributeResult = csl_decode_index(res, data, offset + totalLength, attribute, types)
             if(attributeResult.value !== undefined)
@@ -411,7 +417,7 @@ function csl_encode_object(value, config, types) {
             attributeBytes[attribute.name] = csl_encode(attributeValue, attribute, types)
     }
     for(const attribute of attributesToEvaluate) {
-        const attributeValue = csl_encode_evaluate(attributeBytes, attribute.valueFunc)
+        const attributeValue = csl_evaluate(attributeBytes, attribute.valueFunc)
         attributeBytes[attribute.name] = csl_encode(attributeValue, attribute, types)
     }
     const bytes = attributes.reduce((acc, attribute) => acc.concat(Array.from(attributeBytes[attribute.name] || [])), [])
@@ -566,19 +572,19 @@ export function keysSet(obj) {
     return Object.keys(obj).filter(key => obj[key])
 }
 
-function csl_encode_evaluate(obj, func) {
-    // console.log("calc:", func)
+function csl_evaluate(obj, func) {
+    // console.log("evaluate:", func)
     if(typeof func === 'number')
         return func
-    let parts = func.match(/((len|sum)\([A-Za-z_,]+\))|(0x[0-9A-F]+)|(\d+)|([+-\\&])|(\(.+\))/g)
+    let parts = func.match(/((len|sum|val)\([A-Za-z_,]+\))|(0x[0-9A-F]+)|(\d+)|([+-x\\&])|(\(.+\))/g)
     while(parts.length > 1) {
         // console.log("parts:",parts)
         const partsWithIndex = parts.map((part, index) => ({ part, index }))
-        const operators = partsWithIndex.filter(item => /^(\+|-|&)$/.test(item.part))
+        const operators = partsWithIndex.filter(item => /^(\+|-|&|x)$/.test(item.part))
         // console.log("operators:", operators)
         if(operators.length === 0)
             throw new Error("invalid expression: no operator")
-        const operatorPriorities = ["&", "+", "-"]
+        const operatorPriorities = ["&", "x", "+", "-"]
         operators.sort((a, b) => operatorPriorities.indexOf(a.part) - operatorPriorities.indexOf(b.part))
         const operator = operators[0]
         if(operator.index === 0 && operator.part !== '-')
@@ -588,13 +594,17 @@ function csl_encode_evaluate(obj, func) {
         let calculatedPart
         switch(operator.part) {
             case "&":
-                calculatedPart = csl_encode_evaluate(obj,parts[operator.index - 1]) & csl_encode_evaluate(obj,parts[operator.index + 1])
+                calculatedPart = csl_evaluate(obj,parts[operator.index - 1]) & csl_evaluate(obj,parts[operator.index + 1])
                 break
             case "+":
-                calculatedPart = csl_encode_evaluate(obj,parts[operator.index - 1]) + csl_encode_evaluate(obj,parts[operator.index + 1])
+                calculatedPart = csl_evaluate(obj,parts[operator.index - 1]) + csl_evaluate(obj,parts[operator.index + 1])
                 break
             case "-":
-                calculatedPart = (operator.index > 0 ? csl_encode_evaluate(obj,parts[operator.index - 1]) : 0) - csl_encode_evaluate(obj,parts[operator.index + 1])
+                calculatedPart = (operator.index > 0 ? csl_evaluate(obj,parts[operator.index - 1]) : 0) - csl_evaluate(obj,parts[operator.index + 1])
+                break
+            case "x":
+                calculatedPart = csl_evaluate(obj,parts[operator.index - 1]) * csl_evaluate(obj,parts[operator.index + 1])
+                break
         }
         parts = [...parts.slice(0,operator.index-1), calculatedPart, ...parts.slice(operator.index+2)]
     }
@@ -610,6 +620,9 @@ function csl_encode_evaluate(obj, func) {
     const sumMatch = part.match(/^sum\(([A-Za-z_,]+)\)$/)
     if(sumMatch)
         return arr(obj, sumMatch[1]).reduce((acc, val) => acc + val, 0) || 0
+    const valMatch = part.match(/^val\(([A-Za-z_,]+)\)$/)
+    if(valMatch)
+        return obj[valMatch[1]]
     const hexMatch = part.match(/^0x([0-9A-Fa-f]+)$/)
     if(hexMatch)
         return parseInt(hexMatch[0], 16)
@@ -618,6 +631,10 @@ function csl_encode_evaluate(obj, func) {
         return parseInt(decMatch[0], 10)
     const bracketMatch = part.match(/^\((.+)\)$/)
     if(bracketMatch)
-        return csl_encode_evaluate(obj, bracketMatch[1])
+        return csl_evaluate(obj, bracketMatch[1])
     throw new Error(`invalid operand: ${part}`)
+}
+
+export function csl_load_types(typesArray) {
+    return typesArray.reduce((acc, type) => ({ ...acc, [type.name]: type }), {})
 }

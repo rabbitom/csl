@@ -236,17 +236,13 @@ function csl_encode_string(str, config) {
 }
 
 function csl_decode_bytes(data, offset, config) {
-    let { byteLength } = config
-    if(typeof byteLength === 'number') {
-        checkLength(data, offset, byteLength)
-        return { value: data.slice(offset, offset + byteLength), byteLength }
-    }
-    else if(data.length > offset) {
-        byteLength = data.length - offset
-        return { value: data.slice(offset, offset + byteLength), byteLength }
-    }
-    else
-        return { value: null, byteLength: 0 }
+    const { byteLength } = config
+    if(typeof byteLength !== 'number')
+        throw new Error('Decoding failed: byteLength of bytes not set', {
+            cause: config
+        })
+    checkLength(data, offset, byteLength)
+    return { value: data.slice(offset, offset + byteLength), byteLength }
 }
 
 function check_boolean_config(config) {

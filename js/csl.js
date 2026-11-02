@@ -281,7 +281,7 @@ function csl_encode_boolean(value, config) {
     return new Uint8Array([value ? trueValue : falseValue])
 }
 
-function csl_decode_bitmask(data, offset, config) {
+function csl_decode_bitmask(data, offset, config, types) {
     const { byteLength, endian, attributes } = config
     checkLength(data, offset, byteLength)
     let x = data[offset]
@@ -305,18 +305,18 @@ function csl_decode_bitmask(data, offset, config) {
                 shift++
         }
         const attrByte = (x & mask) >> shift;
-        const attrResult = csl_decode([attrByte], 0, attribute)
+        const attrResult = csl_decode([attrByte], 0, attribute, types)
         res[name] = attrResult.value
     })
     return { value: res, byteLength }
 }
 
-function csl_encode_bitmask(value, config) {
+function csl_encode_bitmask(value, config, types) {
     let b = 0
     const { attributes, byteLength, endian } = config
     attributes.forEach(attribute => {
         const { mask, name } = attribute
-        const attrData = csl_encode(value[name], attribute)
+        const attrData = csl_encode(value[name], attribute, types)
         const attrValue = attrData[0]
         let maskShift = 0;
         while(((1 << maskShift) & mask) == 0)
@@ -347,16 +347,16 @@ function csl_get_index_type(value, config) {
         throw new Error(`csl get index type failed: index could not be determined for ${config.name}`)
 }
 
-function csl_decode_index(value, data, offset, config) { 
+function csl_decode_index(value, data, offset, config, types) { 
     const type = csl_get_index_type(value, config)
     if(type !== undefined)
-        return csl_decode(data, offset, type)
+        return csl_decode(data, offset, type, types)
     if(!config.optional)
         throw new Error("csl decode index failed: index type not found")
     return { value: undefined, byteLength: 0 }
 }
 
-function csl_decode_object(data, offset, config) {
+function csl_decode_object(data, offset, config, types) {
     const { byteLength, attributes } = config
     if(typeof byteLength === 'number')
         checkLength(data, offset, byteLength)
@@ -365,13 +365,13 @@ function csl_decode_object(data, offset, config) {
     for(let attribute of attributes) {
         const { name, type } = attribute
         if(type === "index") {
-            const attributeResult = csl_decode_index(res, data, offset + totalLength, attribute)
+            const attributeResult = csl_decode_index(res, data, offset + totalLength, attribute, types)
             if(attributeResult.value !== undefined)
                 res[name] = attributeResult.value
             totalLength += attributeResult.byteLength
         }
         else {
-            const attributeResult = csl_decode(data, offset + totalLength, attribute)
+            const attributeResult = csl_decode(data, offset + totalLength, attribute, types)
             res[name] = attributeResult.value
             totalLength += attributeResult.byteLength
         }
@@ -381,7 +381,7 @@ function csl_decode_object(data, offset, config) {
     return { value: res, byteLength: totalLength }
 }
 
-function csl_encode_object(value, config) {
+function csl_encode_object(value, config, types) {
     const { attributes } = config
     let attributeBytes = {}
     const attributesToEvaluate = []
@@ -405,20 +405,20 @@ function csl_encode_object(value, config) {
             const attributeType = csl_get_index_type(value, attribute)
             if(attributeType === undefined)
                 throw new Error(`Encoding failed: index type not found for ${attribute.name}`)
-            attributeBytes[attribute.name] = csl_encode(attributeValue, attributeType)
+            attributeBytes[attribute.name] = csl_encode(attributeValue, attributeType, types)
         }
         else
-            attributeBytes[attribute.name] = csl_encode(attributeValue, attribute)
+            attributeBytes[attribute.name] = csl_encode(attributeValue, attribute, types)
     }
     for(const attribute of attributesToEvaluate) {
         const attributeValue = csl_encode_evaluate(attributeBytes, attribute.valueFunc)
-        attributeBytes[attribute.name] = csl_encode(attributeValue, attribute)
+        attributeBytes[attribute.name] = csl_encode(attributeValue, attribute, types)
     }
     const bytes = attributes.reduce((acc, attribute) => acc.concat(Array.from(attributeBytes[attribute.name] || [])), [])
     return new Uint8Array(bytes)
 }
 
-function csl_decode_array(data, offset, config) {
+function csl_decode_array(data, offset, config, types) {
     const { byteLength, item } = config
     if(typeof byteLength !== 'number')
         throw new Error("Decoding failed: byteLength of array not set", {
@@ -428,24 +428,24 @@ function csl_decode_array(data, offset, config) {
     let totalLength = 0
     const res = []
     while(totalLength < byteLength) {
-        const itemResult = csl_decode(data, offset + totalLength, item)
+        const itemResult = csl_decode(data, offset + totalLength, item, types)
         res.push(itemResult.value)
         totalLength += itemResult.byteLength
     }
     return { value: res, byteLength: totalLength }
 }
 
-function csl_encode_array(value, config) {
+function csl_encode_array(value, config, types) {
     const { item } = config
     let data = []
     for(const itemValue of value) {
-        const itemData = csl_encode(itemValue, item)
+        const itemData = csl_encode(itemValue, item, types)
         data = data.concat(Array.from(itemData))
     }
     return new Uint8Array(data)
 }
 
-export function csl_decode(data, offset, config) {
+export function csl_decode(data, offset, config, types) {
     if(!(data instanceof Uint8Array)) {
         if(data instanceof Array || data instanceof ArrayBuffer)
             data = new Uint8Array(data)
@@ -466,21 +466,25 @@ export function csl_decode(data, offset, config) {
         case 'boolean':
             return csl_decode_boolean(data, offset, config)
         case 'bitmask':
-            return csl_decode_bitmask(data, offset, config)
+            return csl_decode_bitmask(data, offset, config, types)
         case 'object': 
-            return csl_decode_object(data, offset, config)
+            return csl_decode_object(data, offset, config, types)
         case 'array':
-            return csl_decode_array(data, offset, config)
+            return csl_decode_array(data, offset, config, types)
         default:
-            throw new Error('Decoding failed: type not supported (' + config.type + ')', {
-                cause: {
-                    config
-                }
-            })
+            const type = types[config.type]
+            if(type)
+                return csl_decode(data, offset, type, types)
+            else
+                throw new Error(`Decoding failed: type ${config.type} not supported`, {
+                    cause: {
+                        config
+                    }
+                })
     }
 }
 
-export function csl_encode(value, config) {
+export function csl_encode(value, config, types) {
     switch(config.type) {
         case 'number':
             return csl_encode_number(value, config)
@@ -498,17 +502,21 @@ export function csl_encode(value, config) {
         case 'boolean':
             return csl_encode_boolean(value, config)
         case 'bitmask':
-            return csl_encode_bitmask(value, config)
+            return csl_encode_bitmask(value, config, types)
         case 'object':
-            return csl_encode_object(value, config)
+            return csl_encode_object(value, config, types)
         case 'array':
-            return csl_encode_array(value, config)
+            return csl_encode_array(value, config, types)
         default:
-            throw new Error('Encoding failed: type not supported', {
-                cause: {
-                    config
-                }
-            })
+            const type = types[config.type]
+            if(type)
+                return csl_encode(value, type, types)
+            else
+                throw new Error(`Encoding failed: type ${config.type} not supported`, {
+                    cause: {
+                        config
+                    }
+                })
     }
 }
 

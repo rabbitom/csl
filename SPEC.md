@@ -67,12 +67,12 @@ config规定了编码和解码的具体方法，可以是一个字段或一个�
 - endian: little | big - 字节序，byteLength大于1时必选
 - attributes: {mask: number, shift: number, ...}[] - 指定各字段的掩码和偏移，解码时先将二进制值与mask做and，再用shift向右移，然后再继续处理。其中shift可忽略，根据mask的值自动确定。
 
-## variable
+## index
 
-此字段必须位于object的attribute当中，其type需根据object其他字段的值确定。
+此字段必须位于object的attribute当中，其type根据object中其他字段的值确定。
 
-- typeIndex: string - 指定同一层级其他字段的名称，根据其值在types数组中查找对应的字段定义
-- types: {index: any, ...config}[] - 根据index属性的值与typeIndex指定字段的值进行匹配
+- indexName: string - 指定同一层级其他字段的名称，根据其值在types数组中查找对应的字段定义
+- types: {indexValue: any, ...config}[] - 根据indexValue的值与indexName指定字段的值进行匹配
 
 ## array
 

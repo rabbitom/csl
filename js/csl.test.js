@@ -218,7 +218,7 @@ test('encode/decode object', () => {
     expect(csl_encode(obj, config)).toStrictEqual(new Uint8Array(arr))
 })
 
-test('encode/decode variable type in object', () => {
+test('encode/decode index type in object', () => {
     const config = {
         type: "object",
         attributes: [
@@ -239,11 +239,11 @@ test('encode/decode variable type in object', () => {
             },
             {
                 name: "info",
-                type: "variable",
-                typeIndex: "category",
+                type: "index",
+                indexName: "category",
                 types: [
                     {
-                        index: 1,
+                        indexValue: 1,
                         type: "object",
                         attributes: [
                             {
@@ -254,7 +254,7 @@ test('encode/decode variable type in object', () => {
                         ]
                     },
                     {
-                        index: 2,
+                        indexValue: 2,
                         type: "object",
                         attributes: [
                             {

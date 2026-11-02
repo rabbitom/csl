@@ -337,22 +337,22 @@ function csl_encode_bitmask(value, config) {
     return res
 }
 
-function csl_get_variable_type(value, config) {
-    const typeIndex = value[config.typeIndex]
-    if(typeIndex !== undefined) {
+function csl_get_index_type(value, config) {
+    const indexValue = value[config.indexName]
+    if(indexValue !== undefined) {
         const { types } = config
-        return types.find(t => parseInt(t.index) === typeIndex)
+        return types.find(t => parseInt(t.indexValue) === indexValue)
     }
     else
-        throw new Error(`csl get variable type failed: index could not be determined for ${config.name}`)
+        throw new Error(`csl get index type failed: index could not be determined for ${config.name}`)
 }
 
-function csl_decode_variable(value, data, offset, config) { 
-    const type = csl_get_variable_type(value, config)
+function csl_decode_index(value, data, offset, config) { 
+    const type = csl_get_index_type(value, config)
     if(type !== undefined)
         return csl_decode(data, offset, type)
     if(!config.optional)
-        throw new Error("csl decode variable failed: variable type not found")
+        throw new Error("csl decode index failed: index type not found")
     return { value: undefined, byteLength: 0 }
 }
 
@@ -364,8 +364,8 @@ function csl_decode_object(data, offset, config) {
     let totalLength = 0
     for(let attribute of attributes) {
         const { name, type } = attribute
-        if(type === "variable") {
-            const attributeResult = csl_decode_variable(res, data, offset + totalLength, attribute)
+        if(type === "index") {
+            const attributeResult = csl_decode_index(res, data, offset + totalLength, attribute)
             if(attributeResult.value !== undefined)
                 res[name] = attributeResult.value
             totalLength += attributeResult.byteLength
@@ -401,10 +401,10 @@ function csl_encode_object(value, config) {
                     })
             }
         }
-        if(attribute.type === 'variable') {
-            const attributeType = csl_get_variable_type(value, attribute)
+        if(attribute.type === 'index') {
+            const attributeType = csl_get_index_type(value, attribute)
             if(attributeType === undefined)
-                throw new Error(`Encoding failed: variable type not found for ${attribute.name}`)
+                throw new Error(`Encoding failed: index type not found for ${attribute.name}`)
             attributeBytes[attribute.name] = csl_encode(attributeValue, attributeType)
         }
         else
